@@ -1,0 +1,561 @@
+Model codes:
+#1.	RF
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold
+from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+import numpy as np
+
+num_repeats = 50
+
+train_r2_scores = []
+test_r2_scores = []
+train_mse_scores = []
+test_mse_scores = []
+train_mae_scores = []
+test_mae_scores = []
+cv_r2_scores_train = []
+cv_mse_scores_train = []
+cv_r2_scores_test = []
+cv_mse_scores_test = []
+y_scrambled_r2_scores = []
+
+for seed in range(num_repeats):
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=seed)
+
+    kf = KFold(n_splits=5, shuffle=True, random_state=seed)
+    fold_r2_train = []
+    fold_mse_train = []
+    fold_r2_test = []
+    fold_mse_test = []
+
+    for train_idx, val_idx in kf.split(X_train):
+        X_train_fold, X_val_fold = X_train.iloc[train_idx], X_train.iloc[val_idx]
+        y_train_fold, y_val_fold = y_train.iloc[train_idx], y_train.iloc[val_idx]
+
+        rf_model = RandomForestRegressor(n_estimators=100, max_depth=10, min_samples_split=5, random_state=seed)
+
+        rf_model.fit(X_train_fold, y_train_fold)
+        model = rf_model 
+        y_val_pred = model.predict(X_val_fold)
+        y_train_pred_fold = model.predict(X_train_fold)
+
+        fold_r2_train.append(r2_score(y_train_fold, y_train_pred_fold))
+        fold_mse_train.append(mean_squared_error(y_train_fold, y_train_pred_fold))
+        fold_r2_test.append(r2_score(y_val_fold, y_val_pred))
+        fold_mse_test.append(mean_squared_error(y_val_fold, y_val_pred))
+
+    cv_r2_scores_train.append(np.mean(fold_r2_train))
+    cv_mse_scores_train.append(np.mean(fold_mse_train))
+    cv_r2_scores_test.append(np.mean(fold_r2_test))
+    cv_mse_scores_test.append(np.mean(fold_mse_test))
+
+
+    hyperparameters = {
+        'n_estimators': 200,
+        'max_depth': 10,
+        'min_samples_split': 5,
+        
+    }
+
+    model = RandomForestRegressor(**hyperparameters, random_state=seed, verbose=False)
+    model.fit(X_train, y_train)
+
+    y_train_pred = model.predict(X_train)
+    y_test_pred = model.predict(X_test)
+    train_r2_scores.append(r2_score(y_train, y_train_pred))
+    test_r2_scores.append(r2_score(y_test, y_test_pred))
+    train_mse_scores.append(mean_squared_error(y_train, y_train_pred))
+    test_mse_scores.append(mean_squared_error(y_test, y_test_pred))
+    train_mae_scores.append(mean_absolute_error(y_train, y_train_pred))
+    test_mae_scores.append(mean_absolute_error(y_test, y_test_pred))
+
+    np.random.seed(seed)
+    y_train_scrambled = np.random.permutation(y_train)
+    model.fit(X_train, y_train_scrambled)
+    y_scrambled_pred = model.predict(X_test)
+    y_scrambled_r2_scores.append(r2_score(y_test, y_scrambled_pred))
+
+print(f"Train R^2: {np.mean(train_r2_scores):.4f} ± {np.std(train_r2_scores):.4f}")
+print(f"Test R^2: {np.mean(test_r2_scores):.4f} ± {np.std(test_r2_scores):.4f}")
+print(f"Train MSE: {np.mean(train_mse_scores):.4f} ± {np.std(train_mse_scores):.4f}")
+print(f"Test MSE: {np.mean(test_mse_scores):.4f} ± {np.std(test_mse_scores):.4f}")
+print(f"Train MAE: {np.mean(train_mae_scores):.4f} ± {np.std(train_mae_scores):.4f}")
+print(f"Test MAE: {np.mean(test_mae_scores):.4f} ± {np.std(test_mae_scores):.4f}")
+
+print("\nCross-Validation Results (Training Set - 50 Runs):")
+print(f"Average R^2: {np.mean(cv_r2_scores_train):.4f} ± {np.std(cv_r2_scores_train):.4f}")
+print(f"Average MSE: {np.mean(cv_mse_scores_train):.4f} ± {np.std(cv_mse_scores_train):.4f}")
+
+print("\nCross-Validation Results (Testing Set - 50 Runs):")
+print(f"Average R^2: {np.mean(cv_r2_scores_test):.4f} ± {np.std(cv_r2_scores_test):.4f}")
+print(f"Average MSE: {np.mean(cv_mse_scores_test):.4f} ± {np.std(cv_mse_scores_test):.4f}")
+
+print(f"-Scrambling Test R^2: {np.mean(y_scrambled_r2_scores):.4f} ± {np.std(y_scrambled_r2_scores):.4f}")
+
+#2.	MLP 
+from sklearn.neural_network import MLPRegressor
+from sklearn.model_selection import train_test_split, KFold 
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import shap
+
+num_repeats = 50
+
+train_r2_scores = []
+test_r2_scores = []
+train_mse_scores = []
+test_mse_scores = []
+train_mae_scores = []
+test_mae_scores = []
+cv_r2_scores_train = []
+cv_mse_scores_train = []
+cv_r2_scores_test = []
+cv_mse_scores_test = []
+y_scrambled_r2_scores = []
+
+for seed in range(num_repeats):
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=seed  
+    )
+
+    scaler = StandardScaler()
+
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    kf = KFold(n_splits=5, shuffle=True, random_state=seed) 
+
+    fold_r2_train = []  
+    fold_mse_train = []
+    fold_r2_test = []
+    fold_mse_test = []
+
+    for train_idx, val_idx in kf.split(X_train):
+        X_train_fold, X_val_fold = X_train.iloc[train_idx], X_train.iloc[val_idx]
+        y_train_fold, y_val_fold = y_train.iloc[train_idx], y_train.iloc[val_idx]
+
+        scaler_fold = StandardScaler() 
+        X_train_fold_scaled = scaler_fold.fit_transform(X_train_fold)
+     
+        X_val_fold_scaled = scaler_fold.transform(X_val_fold)
+
+        hyperparameters = {
+            "hidden_layer_sizes": (50,30),
+            "activation": "tanh",
+            "solver": "sgd",
+            "alpha": 0.0001,
+            "batch_size": "auto",
+            "learning_rate": "constant",
+            "learning_rate_init": 0.0001,
+            "max_iter": 1000,
+            "random_state": seed, 
+            "verbose": False,  
+            "tol": 0.0001,
+        }
+        model = MLPRegressor(**hyperparameters)   
+        model.fit(X_train_fold_scaled, y_train_fold)
+
+        y_val_pred = model.predict(X_val_fold_scaled) 
+        y_train_pred_fold = model.predict(X_train_fold_scaled)   
+
+        fold_r2_train.append(r2_score(y_train_fold, y_train_pred_fold))
+        fold_mse_train.append(mean_squared_error(y_train_fold, y_train_pred_fold))
+        fold_r2_test.append(r2_score(y_val_fold, y_val_pred))
+        fold_mse_test.append(mean_squared_error(y_val_fold, y_val_pred))
+    cv_r2_scores_train.append(np.mean(fold_r2_train))
+    cv_mse_scores_train.append(np.mean(fold_mse_train))
+    cv_r2_scores_test.append(np.mean(fold_r2_test))
+    cv_mse_scores_test.append(np.mean(fold_mse_test))
+
+    model = MLPRegressor(**hyperparameters)
+    model.fit(X_train_scaled, y_train)  
+
+    y_train_pred = model.predict(X_train_scaled)  
+    y_test_pred = model.predict(X_test_scaled)   
+    train_r2_scores.append(r2_score(y_train, y_train_pred))
+    test_r2_scores.append(r2_score(y_test, y_test_pred))
+    train_mse_scores.append(mean_squared_error(y_train, y_train_pred))
+    test_mse_scores.append(mean_squared_error(y_test, y_test_pred))
+    train_mae_scores.append(mean_absolute_error(y_train, y_train_pred))
+    test_mae_scores.append(mean_absolute_error(y_test, y_test_pred))
+
+    np.random.seed(seed)
+    y_train_scrambled = np.random.permutation(y_train)
+    model.fit(X_train_scaled, y_train_scrambled)  
+    y_scrambled_pred = model.predict(X_test_scaled) 
+    y_scrambled_r2_scores.append(r2_score(y_test, y_scrambled_pred))
+
+print(f"Train R^2: {np.mean(train_r2_scores):.4f} ± {np.std(train_r2_scores):.4f}")
+print(f"Test R^2: {np.mean(test_r2_scores):.4f} ± {np.std(test_r2_scores):.4f}")
+print(f"Train MSE: {np.mean(train_mse_scores):.4f} ± {np.std(train_mse_scores):.4f}")
+print(f"Test MSE: {np.mean(test_mse_scores):.4f} ± {np.std(test_mse_scores):.4f}")
+print(f"Train MAE: {np.mean(train_mae_scores):.4f} ± {np.std(train_mae_scores):.4f}")
+print(f"Test MAE: {np.mean(test_mae_scores):.4f} ± {np.std(test_mae_scores):.4f}")
+
+print("\nCross-Validation Results (Training Set - 50 Runs):")
+print(f"Average R^2: {np.mean(cv_r2_scores_train):.4f} ± {np.std(cv_r2_scores_train):.4f}")
+print(f"Average MSE: {np.mean(cv_mse_scores_train):.4f} ± {np.std(cv_mse_scores_train):.4f}")
+
+print("\nCross-Validation Results (Testing Set - 50 Runs):")
+print(f"Average R^2: {np.mean(cv_r2_scores_test):.4f} ± {np.std(cv_r2_scores_test):.4f}")
+print(f"Average MSE: {np.mean(cv_mse_scores_test):.4f} ± {np.std(cv_mse_scores_test):.4f}")
+
+print(
+    f"-Scrambling Test R^2: {np.mean(y_scrambled_r2_scores):.4f} ± {np.std(y_scrambled_r2_scores):.4f}"
+
+#3.	GBM
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.model_selection import train_test_split, KFold
+from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+import numpy as np
+
+num_repeats = 50
+hyperparameters = {
+    'n_estimators': 150,
+    'learning_rate': 0.02,
+    'max_depth': 10,       
+    'loss': 'squared_error', 
+}
+
+train_r2_scores = []
+test_r2_scores = []
+train_mse_scores = []
+test_mse_scores = []
+train_mae_scores = []
+test_mae_scores = []
+cv_r2_scores_train = []
+cv_mse_scores_train = []
+cv_r2_scores_test = []
+cv_mse_scores_test = []
+y_scrambled_r2_scores = []
+
+for seed in range(num_repeats):
+    
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=seed) 
+
+    kf = KFold(n_splits=5, shuffle=True, random_state=seed)
+    fold_r2_train = []
+    fold_mse_train = []
+    fold_r2_test = []
+    fold_mse_test = []
+
+    for train_idx, val_idx in kf.split(X_train):
+        X_train_fold, X_val_fold = X_train.iloc[train_idx], X_train.iloc[val_idx]
+        y_train_fold, y_val_fold = y_train.iloc[train_idx], y_train.iloc[val_idx]
+
+        model = GradientBoostingRegressor(**hyperparameters, random_state=seed, verbose=False)
+        model.fit(X_train_fold, y_train_fold)
+
+        y_val_pred = model.predict(X_val_fold)
+        y_train_pred_fold = model.predict(X_train_fold)
+
+        fold_r2_train.append(r2_score(y_train_fold, y_train_pred_fold))
+        fold_mse_train.append(mean_squared_error(y_train_fold, y_train_pred_fold))
+        fold_r2_test.append(r2_score(y_val_fold, y_val_pred))
+        fold_mse_test.append(mean_squared_error(y_val_fold, y_val_pred))
+
+    cv_r2_scores_train.append(np.mean(fold_r2_train))
+    cv_mse_scores_train.append(np.mean(fold_mse_train))
+    cv_r2_scores_test.append(np.mean(fold_r2_test))
+    cv_mse_scores_test.append(np.mean(fold_mse_test))
+    model = GradientBoostingRegressor(**hyperparameters, random_state=seed, verbose=False)
+    model.fit(X_train, y_train)
+
+    y_train_pred = model.predict(X_train)
+    y_test_pred = model.predict(X_test)
+    train_r2_scores.append(r2_score(y_train, y_train_pred))
+    test_r2_scores.append(r2_score(y_test, y_test_pred))
+    train_mse_scores.append(mean_squared_error(y_train, y_train_pred))
+    test_mse_scores.append(mean_squared_error(y_test, y_test_pred))
+    train_mae_scores.append(mean_absolute_error(y_train, y_train_pred))
+    test_mae_scores.append(mean_absolute_error(y_test, y_test_pred))
+
+    np.random.seed(seed)
+    y_train_scrambled = np.random.permutation(y_train)
+    model.fit(X_train, y_train_scrambled)
+    y_scrambled_pred = model.predict(X_test)
+    y_scrambled_r2_scores.append(r2_score(y_test, y_scrambled_pred))
+
+print(f"Train R^2: {np.mean(train_r2_scores):.4f} ± {np.std(train_r2_scores):.4f}")
+print(f"Test R^2: {np.mean(test_r2_scores):.4f} ± {np.std(test_r2_scores):.4f}")
+print(f"Train MSE: {np.mean(train_mse_scores):.4f} ± {np.std(train_mse_scores):.4f}")
+print(f"Test MSE: {np.mean(test_mse_scores):.4f} ± {np.std(test_mse_scores):.4f}")
+print(f"Train MAE: {np.mean(train_mae_scores):.4f} ± {np.std(train_mae_scores):.4f}")
+print(f"Test MAE: {np.mean(test_mae_scores):.4f} ± {np.std(test_mae_scores):.4f}")
+
+print("\nCross-Validation Results (Training Set - 50 Runs):")
+print(f"Average R^2: {np.mean(cv_r2_scores_train):.4f} ± {np.std(cv_r2_scores_train):.4f}")
+print(f"Average MSE: {np.mean(cv_mse_scores_train):.4f} ± {np.std(cv_mse_scores_train):.4f}")
+
+print("\nCross-Validation Results (Testing Set - 50 Runs):")
+print(f"Average R^2: {np.mean(cv_r2_scores_test):.4f} ± {np.std(cv_r2_scores_test):.4f}")
+print(f"Average MSE: {np.mean(cv_mse_scores_test):.4f} ± {np.std(cv_mse_scores_test):.4f}")
+
+print(f"-Scrambling Test R^2: {np.mean(y_scrambled_r2_scores):.4f} ± {np.std(y_scrambled_r2_scores):.4f}")
+
+#4.	XGB
+import pandas as pd
+data = pd.read_excel('ML.xlsx')  
+ X = data[['l/h', 'alfa', 'beta', 'Re']]
+y = data['Sh']
+import xgboost as xgb
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+import numpy as np
+
+from sklearn.model_selection import train_test_split, KFold
+from sklearn.preprocessing import StandardScaler
+
+num_repeats = 50
+
+hyperparameters = {
+    'objective': 'reg:squarederror',
+    'learning_rate': 0.1,
+    'max_depth': 5,
+    'n_estimators': 100,
+    'subsample': 0.8,
+    'colsample_bytree': 0.8,
+
+}
+
+cv_r2_scores_train = []
+cv_mse_scores_train = []
+cv_r2_scores_test = []
+cv_mse_scores_test = []
+train_r2_scores = []
+test_r2_scores = []
+train_mse_scores = []
+test_mse_scores = []
+train_mae_scores = []
+test_mae_scores = []
+y_scrambled_r2_scores = []
+
+for seed in range(num_repeats):
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=seed)
+
+    kf = KFold(n_splits=5, shuffle=True, random_state=seed)
+    fold_r2_train = []
+    fold_mse_train = []
+    fold_r2_test = []
+    fold_mse_test = []
+
+    for train_idx, val_idx in kf.split(X_train):
+        X_train_fold, X_val_fold = X_train.iloc[train_idx], X_train.iloc[val_idx]
+        y_train_fold, y_val_fold = y_train.iloc[train_idx], y_train.iloc[val_idx]
+
+        model = xgb.XGBRegressor(**hyperparameters, verbosity=0)  
+        model.set_params(random_state=seed)
+        model.fit(X_train_fold, y_train_fold)
+        y_val_pred = model.predict(X_val_fold)
+        y_train_pred_fold = model.predict(X_train_fold)
+
+        fold_r2_train.append(r2_score(y_train_fold, y_train_pred_fold))
+        fold_mse_train.append(mean_squared_error(y_train_fold, y_train_pred_fold))
+        fold_r2_test.append(r2_score(y_val_fold, y_val_pred))
+        fold_mse_test.append(mean_squared_error(y_val_fold, y_val_pred))
+
+    cv_r2_scores_train.append(np.mean(fold_r2_train))
+    cv_mse_scores_train.append(np.mean(fold_mse_train))
+    cv_r2_scores_test.append(np.mean(fold_r2_test))
+    cv_mse_scores_test.append(np.mean(fold_mse_test))
+
+    model = xgb.XGBRegressor(**hyperparameters, verbosity=0)
+    model.fit(X_train, y_train)
+
+    y_train_pred = model.predict(X_train)
+    y_test_pred = model.predict(X_test)
+    train_r2_scores.append(r2_score(y_train, y_train_pred))
+    test_r2_scores.append(r2_score(y_test, y_test_pred))
+    train_mse_scores.append(mean_squared_error(y_train, y_train_pred))
+    test_mse_scores.append(mean_squared_error(y_test, y_test_pred))
+    train_mae_scores.append(mean_absolute_error(y_train, y_train_pred))
+    test_mae_scores.append(mean_absolute_error(y_test, y_test_pred))
+
+    np.random.seed(seed)
+    y_train_scrambled = np.random.permutation(y_train)
+    model.fit(X_train, y_train_scrambled)
+    y_scrambled_pred = model.predict(X_test)
+    y_scrambled_r2_scores.append(r2_score(y_test, y_scrambled_pred))
+
+print(f"Train R^2: {np.mean(train_r2_scores):.4f} ± {np.std(train_r2_scores):.4f}")
+print(f"Test R^2: {np.mean(test_r2_scores):.4f} ± {np.std(test_r2_scores):.4f}")
+print(f"Train MSE: {np.mean(train_mse_scores):.4f} ± {np.std(train_mse_scores):.4f}")
+print(f"Test MSE: {np.mean(test_mse_scores):.4f} ± {np.std(test_mse_scores):.4f}")
+print(f"Train MAE: {np.mean(train_mae_scores):.4f} ± {np.std(train_mae_scores):.4f}")
+print(f"Test MAE: {np.mean(test_mae_scores):.4f} ± {np.std(test_mae_scores):.4f}")
+
+print("\nCross-Validation Results (Training Set - 50 Runs):")
+print(f"Average R^2: {np.mean(cv_r2_scores_train):.4f} ± {np.std(cv_r2_scores_train):.4f}")
+print(f"Average MSE: {np.mean(cv_mse_scores_train):.4f} ± {np.std(cv_mse_scores_train):.4f}")
+
+print("\nCross-Validation Results (Testing Set - 50 Runs):")
+print(f"Average R^2: {np.mean(cv_r2_scores_test):.4f} ± {np.std(cv_r2_scores_test):.4f}")
+print(f"Average MSE: {np.mean(cv_mse_scores_test):.4f} ± {np.std(cv_mse_scores_test):.4f}")
+
+print(f"-Scrambling Test R^2: {np.mean(y_scrambled_r2_scores):.4f} ± {np.std(y_scrambled_r2_scores):.4f}")
+
+#5.	CatBoost
+
+from catboost import CatBoostRegressor
+from sklearn.model_selection import train_test_split, KFold
+from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+import numpy as np
+
+num_repeats = 50
+train_r2_scores = []
+test_r2_scores = []
+train_mse_scores = []
+test_mse_scores = []
+train_mae_scores = []
+test_mae_scores = []
+cv_r2_scores_train = []
+cv_mse_scores_train = []
+cv_r2_scores_test = []
+cv_mse_scores_test = []
+y_scrambled_r2_scores = []
+
+for seed in range(num_repeats):
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=seed)
+    kf = KFold(n_splits=5, shuffle=True, random_state=seed)                                    
+    fold_r2_train = []
+    fold_mse_train = []
+    fold_r2_test = []
+    fold_mse_test = []
+
+    for train_idx, val_idx in kf.split(X_train):
+        X_train_fold, X_val_fold = X_train.iloc[train_idx], X_train.iloc[val_idx]
+        y_train_fold, y_val_fold = y_train.iloc[train_idx], y_train.iloc[val_idx]
+        hyperparameters = {
+            'iterations': 1000,  
+            'learning_rate': 0.02,  
+            'depth': 10,  
+            'l2_leaf_reg': 3,  
+            'loss_function': 'RMSE'  
+        }
+
+        model = CatBoostRegressor(**hyperparameters, random_seed=seed) 
+
+        model.fit(X_train_fold, y_train_fold)
+
+        y_val_pred = model.predict(X_val_fold)
+        y_train_pred_fold = model.predict(X_train_fold)
+
+        fold_r2_train.append(r2_score(y_train_fold, y_train_pred_fold))
+        fold_mse_train.append(mean_squared_error(y_train_fold, y_train_pred_fold))
+        fold_r2_test.append(r2_score(y_val_fold, y_val_pred))
+        fold_mse_test.append(mean_squared_error(y_val_fold, y_val_pred))
+
+    cv_r2_scores_train.append(np.mean(fold_r2_train))
+    cv_mse_scores_train.append(np.mean(fold_mse_train))
+    cv_r2_scores_test.append(np.mean(fold_r2_test))
+    cv_mse_scores_test.append(np.mean(fold_mse_test))
+    model = CatBoostRegressor(**hyperparameters, random_seed=seed, verbose=False)
+    model.fit(X_train, y_train)
+
+    y_train_pred = model.predict(X_train)
+    y_test_pred = model.predict(X_test)
+    train_r2_scores.append(r2_score(y_train, y_train_pred))
+    test_r2_scores.append(r2_score(y_test, y_test_pred))
+    train_mse_scores.append(mean_squared_error(y_train, y_train_pred))
+    test_mse_scores.append(mean_squared_error(y_test, y_test_pred))
+    train_mae_scores.append(mean_absolute_error(y_train, y_train_pred))
+    test_mae_scores.append(mean_absolute_error(y_test, y_test_pred))
+
+    np.random.seed(seed)
+    y_train_scrambled = np.random.permutation(y_train)
+    model.fit(X_train, y_train_scrambled)
+    y_scrambled_pred = model.predict(X_test)
+    y_scrambled_r2_scores.append(r2_score(y_test, y_scrambled_pred))
+print(f"Train R^2: {np.mean(train_r2_scores):.4f} ± {np.std(train_r2_scores):.4f}")
+print(f"Test R^2: {np.mean(test_r2_scores):.4f} ± {np.std(test_r2_scores):.4f}")
+print(f"Train MSE: {np.mean(train_mse_scores):.4f} ± {np.std(train_mse_scores):.4f}")
+print(f"Test MSE: {np.mean(test_mse_scores):.4f} ± {np.std(test_mse_scores):.4f}")
+print(f"Train MAE: {np.mean(train_mae_scores):.4f} ± {np.std(train_mae_scores):.4f}")
+print(f"Test MAE: {np.mean(test_mae_scores):.4f} ± {np.std(test_mae_scores):.4f}")
+
+print("\nCross-Validation Results (Training Set - 50 Runs):")
+print(f"Average R^2: {np.mean(cv_r2_scores_train):.4f} ± {np.std(cv_r2_scores_train):.4f}")
+print(f"Average MSE: {np.mean(cv_mse_scores_train):.4f} ± {np.std(cv_mse_scores_train):.4f}")
+
+print("\nCross-Validation Results (Testing Set - 50 Runs):")
+print(f"Average R^2: {np.mean(cv_r2_scores_test):.4f} ± {np.std(cv_r2_scores_test):.4f}")
+print(f"Average MSE: {np.mean(cv_mse_scores_test):.4f} ± {np.std(cv_mse_scores_test):.4f}")
+
+print(f"-Scrambling Test R^2: {np.mean(y_scrambled_r2_scores):.4f} ± {np.std(y_scrambled_r2_scores):.4f}")
+
+Bayesian optimization:
+import pandas as pd
+!pip install catboost
+!pip install bayesian-optimization
+import pandas as pd # Removed the extra space before the import statement
+from catboost import CatBoostRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+import numpy as np
+from bayes_opt import BayesianOptimization # Changed the module name to bayes_opt
+
+# --- Data Loading and Preprocessing ---
+data = pd.read_excel('ML.xlsx')
+X = data[['l/h', 'alfa', 'beta', 'Re']]
+
+# --- Training CatBoostRegressor for Pn ---
+y_Pn = data['Pn']
+X_train_Pn, X_test_Pn, y_train_Pn, y_test_Pn = train_test_split(X, y_Pn, test_size=0.2, random_state=1)
+hyperparameters_Pn = {
+    'iterations': 1000,
+    'learning_rate': 0.1,
+    'depth': 5,
+    'l2_leaf_reg': 3,
+    'loss_function': 'RMSE'
+}
+model_Pn = CatBoostRegressor(**hyperparameters_Pn, random_seed=1, verbose=False)
+model_Pn.fit(X_train_Pn, y_train_Pn)
+
+# --- Training CatBoostRegressor for Sh ---
+y_Sh = data['Sh']
+X_train_Sh, X_test_Sh, y_train_Sh, y_test_Sh = train_test_split(X, y_Sh, test_size=0.2, random_state=1)
+hyperparameters_Sh = {
+    'iterations': 1000,
+    'learning_rate': 0.02,
+    'depth': 5,
+    'l2_leaf_reg': 3,
+    'loss_function': 'RMSE'
+}
+model_Sh = CatBoostRegressor(**hyperparameters_Sh, random_seed=1, verbose=False)
+model_Sh.fit(X_train_Sh, y_train_Sh)
+
+# --- Objective Function for Bayesian Optimization ---
+def objective_function(l_h, alfa, beta, Re):
+  input_data = pd.DataFrame([[l_h, alfa, beta, Re]], columns=['l/h', 'alfa', 'beta', 'Re'])
+  predicted_Pn = model_Pn.predict(input_data)[0]
+  predicted_Sh = model_Sh.predict(input_data)[0]
+  objective = predicted_Sh / predicted_Pn
+  return objective
+
+# --- Bayesian Optimization ---
+pbounds = {
+    'l_h': (2, 10),
+    'alfa': (0, 60),
+    'beta': (60, 120),
+    'Re': (30, 470)
+}
+optimizer = BayesianOptimization(f=objective_function, pbounds=pbounds, random_state=1)
+optimizer.maximize(init_points=5, n_iter=250)
+optimal_params = optimizer.max['params']
+print("Optimal parameters:", optimal_params)
+optimal_input_data = pd.DataFrame([optimal_params.values()], columns=optimal_params.keys())
+optimal_input_data = optimal_input_data.rename(columns={'l_h': 'l/h'}) # This line is added to rename the column
+optimal_input_data = optimal_input_data[['l/h', 'alfa', 'beta', 'Re']] # Reorder columns to match training data
+
+# Predict Pn and Sh using the optimal parameters
+optimal_Pn = model_Pn.predict(optimal_input_data)[0]
+optimal_Sh = model_Sh.predict(optimal_input_data)[0]
+
+# --- Print Results ---
+print("Optimal parameters:", optimal_params)
+print("Optimal Pn:", optimal_Pn)
+print("Optimal Sh:", optimal_Sh)
+
